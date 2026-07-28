@@ -1,0 +1,25 @@
+{
+  "name": "Bill Viewer + WhatsApp",
+  "short_name": "Bill+WA",
+  "description": "PDF bill kholein aur mobile number ke saamne se seedha WhatsApp par PDF bhejein",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f6f4ee",
+  "theme_color": "#1f7a4d",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "file_handlers": [
+    {
+      "action": "./index.html",
+      "accept": {
+        "application/pdf": [".pdf"]
+      },
+      "icons": [
+        { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }
+      ],
+      "launch_type": "single-client"
+    }
+  ]
+}
