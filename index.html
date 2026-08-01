@@ -290,6 +290,7 @@
   // Matches Indian mobile numbers, with optional +91 / 91 / 0 prefix,
   // optional label words before them (Mob, Mobile, Ph, Phone, Contact, Cell, WhatsApp)
   const PHONE_REGEX = /(?:(?:mob(?:ile)?|ph(?:one)?|contact|cell|whatsapp|wa)\s*[:.\-]?\s*)?(\+?91[\s\-]?)?([6-9]\d{9})\b/gi;
+  const AMOUNT_REGEX = /(?:net\s*amount|amount\s*payable)\s*[:\-]?\s*(?:rs\.?|inr|₹)?\s*([\d,]+(?:\.\d{1,2})?)/i;
 
   function normalizeToWaNumber(raw) {
     const digits = raw.replace(/\D/g, '');
@@ -300,6 +301,7 @@
   }
 
   const COPY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+  const CHAT_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
   const CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
 
   async function copyNumber(text, btnEl) {
@@ -342,10 +344,57 @@
   }
 
   let currentFile = null;
+  let currentMessage = '';
+  let currentPdfDoc = null;
+  let pdfPageBlob = null;
+
+  async function getPageImageBlob(pageNum, scale) {
+    const page = await currentPdfDoc.getPage(pageNum);
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+  }
+
+  async function openDirectChat(waNumber, pageNum, btnEl) {
+    const originalHtml = btnEl.innerHTML;
+    const chatUrl = 'https://wa.me/' + waNumber + (currentMessage ? '?text=' + encodeURIComponent(currentMessage) : '');
+    window.open(chatUrl, '_blank');
+
+    if (!(navigator.clipboard && window.ClipboardItem)) {
+      alert('Is browser me image seedha clipboard me copy nahi ho sakti. Chat khul chuki hai — bill ki image manually attach/paste kar dein.');
+      return;
+    }
+    if (!pdfPageBlob) {
+      alert('Bill ki image abhi taiyar ho rahi thi. Chat khul chuki hai — ek do second ruk kar isi button ko dubara dabayein taaki image bhi copy ho jaye.');
+      return;
+    }
+
+    btnEl.disabled = true;
+    btnEl.innerHTML = '…';
+    try {
+      // pdfPageBlob is already a resolved Blob (rendered in the background
+      // right after the PDF loaded), so this write happens instantly with
+      // no delay — keeping it inside the click's user-activation window.
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': pdfPageBlob })]);
+      btnEl.innerHTML = CHECK_SVG;
+      setTimeout(() => { btnEl.innerHTML = originalHtml; btnEl.disabled = false; }, 1500);
+    } catch (err) {
+      alert('Image clipboard me copy nahi ho payi. Chat khul chuki hai — bill ki image manually attach/paste kar dein.');
+      btnEl.innerHTML = originalHtml;
+      btnEl.disabled = false;
+    }
+  }
 
   async function shareCurrentPdf(waNumber) {
     if (!currentFile) return;
     const shareData = { files: [currentFile] };
+    if (currentMessage) shareData.text = currentMessage;
     const canFileShare = navigator.canShare && navigator.canShare({ files: [currentFile] });
 
     if (navigator.share && canFileShare) {
@@ -376,7 +425,7 @@
       'Tip: Agar ye tool aap seedha apne phone ke browser me (Claude ke bahar) khol kar try karein, to "Send PDF" button se real Share sheet khulega jisme PDF pehle se selected hoga.'
     );
 
-    window.open('https://wa.me/' + waNumber, '_blank');
+    window.open('https://wa.me/' + waNumber + (currentMessage ? '?text=' + encodeURIComponent(currentMessage) : ''), '_blank');
   }
 
   async function loadPdfFile(file) {
@@ -389,10 +438,14 @@
     try {
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      currentPdfDoc = pdf;
+      pdfPageBlob = null;
+      getPageImageBlob(1, 3).then((b) => { pdfPageBlob = b; }).catch(() => { pdfPageBlob = null; });
       stage.innerHTML = '';
 
       let totalFound = 0;
       const uniqueNumbers = new Set();
+      let detectedAmount = null;
 
       for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
         const page = await pdf.getPage(pageNum);
@@ -445,6 +498,11 @@
             combined += p.text;
           });
 
+          if (detectedAmount === null) {
+            const amtMatch = combined.match(AMOUNT_REGEX);
+            if (amtMatch) detectedAmount = amtMatch[1];
+          }
+
           let match;
           PHONE_REGEX.lastIndex = 0;
           while ((match = PHONE_REGEX.exec(combined)) !== null) {
@@ -481,14 +539,25 @@
             const btn = document.createElement('button');
             btn.className = 'wa-btn';
             btn.innerHTML = WA_SVG;
-            btn.title = 'PDF share karein — search box me +' + waNumber + ' paste karke bhejein';
+            btn.title = 'Number auto-copy ho jayega + PDF share karein — WhatsApp search box me bas paste kar dein';
             btn.addEventListener('click', () => {
+              copyNumber('+' + waNumber, copyBtn);
               shareCurrentPdf(waNumber);
+            });
+
+            const chatBtn = document.createElement('button');
+            chatBtn.className = 'wa-btn';
+            chatBtn.style.background = '#0a7cff';
+            chatBtn.innerHTML = CHAT_SVG;
+            chatBtn.title = 'Direct WhatsApp chat khole (share window nahi) + bill ki image clipboard me copy ho jayegi, chat me Ctrl+V karke paste kar dein';
+            chatBtn.addEventListener('click', () => {
+              openDirectChat(waNumber, pageNum, chatBtn);
             });
 
             group.appendChild(numberChip);
             group.appendChild(copyBtn);
             group.appendChild(btn);
+            group.appendChild(chatBtn);
             wrap.appendChild(group);
 
             totalFound++;
@@ -497,6 +566,10 @@
         });
       }
 
+      currentMessage = detectedAmount
+        ? 'Bill is attached. Net Amount: *₹' + detectedAmount + '*'
+        : 'Bill is attached.';
+
       const summary = document.createElement('div');
       summary.className = 'summary-bar';
       if (uniqueNumbers.size > 0) {
@@ -504,6 +577,21 @@
       } else {
         summary.innerHTML = 'Is PDF me koi mobile number detect nahi hua. Agar number kisi alag format me hai, mujhe batao — pattern update kar dunga.';
       }
+      const amountLine = document.createElement('div');
+      amountLine.style.cssText = 'margin-top:8px;';
+      const label = document.createElement('div');
+      label.style.cssText = 'font-size:12.5px;opacity:.8;margin-bottom:4px;';
+      label.textContent = detectedAmount
+        ? '💬 Message (edit kar sakte ho, ye "Send PDF" ke saath jayega):'
+        : '💬 Amount detect nahi hua — message edit kar sakte ho:';
+      const msgBox = document.createElement('textarea');
+      msgBox.id = 'msgBox';
+      msgBox.value = currentMessage;
+      msgBox.style.cssText = 'width:100%;max-width:520px;min-height:44px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:13.5px;resize:vertical;box-sizing:border-box;';
+      msgBox.addEventListener('input', () => { currentMessage = msgBox.value; });
+      amountLine.appendChild(label);
+      amountLine.appendChild(msgBox);
+      summary.appendChild(amountLine);
       stage.insertBefore(summary, stage.firstChild);
 
       setStatus(uniqueNumbers.size + ' number mile', true);
