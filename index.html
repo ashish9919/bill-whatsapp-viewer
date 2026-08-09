@@ -450,6 +450,7 @@
       let detectedAmount = null;
       let detectedDueAmount = null;
       let isCreditBill = false;
+      const debugLines = [];
 
       for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
         const page = await pdf.getPage(pageNum);
@@ -501,6 +502,8 @@
             offsets.push({ start: combined.length, part: p });
             combined += p.text;
           });
+
+          debugLines.push(combined);
 
           if (detectedAmount === null) {
             const amtMatch = combined.match(AMOUNT_REGEX);
@@ -608,6 +611,19 @@
       amountLine.appendChild(label);
       amountLine.appendChild(msgBox);
       summary.appendChild(amountLine);
+
+      const debugDetails = document.createElement('details');
+      debugDetails.style.cssText = 'margin-top:8px;font-size:12px;';
+      const debugSummary = document.createElement('summary');
+      debugSummary.style.cssText = 'cursor:pointer;opacity:.7;';
+      debugSummary.textContent = '🔍 Debug: PDF se exactly kya text mila (yahan click karo)';
+      const debugPre = document.createElement('pre');
+      debugPre.style.cssText = 'white-space:pre-wrap;word-break:break-word;background:#f6f4ee;border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px;max-height:240px;overflow:auto;font-family:monospace;font-size:11.5px;';
+      debugPre.textContent = debugLines.join('\n');
+      debugDetails.appendChild(debugSummary);
+      debugDetails.appendChild(debugPre);
+      summary.appendChild(debugDetails);
+
       stage.insertBefore(summary, stage.firstChild);
 
       setStatus(uniqueNumbers.size + ' number mile', true);
