@@ -292,7 +292,9 @@
   const PHONE_REGEX = /(?:(?:mob(?:ile)?|ph(?:one)?|contact|cell|whatsapp|wa)\s*[:.\-]?\s*)?(\+?91[\s\-]?)?([6-9]\d{9})\b/gi;
   const AMOUNT_REGEX = /(?:net\s*amount|amount\s*payable)\s*[:\-]?\s*(?:rs\.?|inr|₹)?\s*([\d,]+(?:\.\d{1,2})?)/i;
   const DUE_AMOUNT_REGEX = /due\s*amount\s*[:\-]?\s*(?:rs\.?|inr|₹)?\s*([\d,]+(?:\.\d{1,2})?)/i;
-  const CREDIT_REGEX = /\bcredit\b/i;
+  const DUE_LABEL_ONLY_REGEX = /due\s*amount\s*[:\-]?\s*$/i;
+  const BARE_NUMBER_REGEX = /^\s*(?:rs\.?|inr|₹)?\s*([\d,]+(?:\.\d{1,2})?)\s*$/;
+  const CREDIT_REGEX = /\bcredit\b(?!\s*days)/i;
 
   function normalizeToWaNumber(raw) {
     const digits = raw.replace(/\D/g, '');
@@ -494,6 +496,8 @@
           }
         });
 
+        lines.sort((l1, l2) => l1.y - l2.y);
+
         lines.forEach((line) => {
           line.parts.sort((p1, p2) => p1.x - p2.x);
           let combined = '';
@@ -578,6 +582,15 @@
             uniqueNumbers.add(waNumber);
           }
         });
+
+        if (detectedDueAmount === null) {
+          for (let i = 0; i < debugLines.length - 1; i++) {
+            if (DUE_LABEL_ONLY_REGEX.test(debugLines[i])) {
+              const bm = debugLines[i + 1].match(BARE_NUMBER_REGEX);
+              if (bm) { detectedDueAmount = bm[1]; break; }
+            }
+          }
+        }
       }
 
       currentMessage = detectedAmount
