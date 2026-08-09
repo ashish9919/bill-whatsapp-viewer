@@ -291,6 +291,8 @@
   // optional label words before them (Mob, Mobile, Ph, Phone, Contact, Cell, WhatsApp)
   const PHONE_REGEX = /(?:(?:mob(?:ile)?|ph(?:one)?|contact|cell|whatsapp|wa)\s*[:.\-]?\s*)?(\+?91[\s\-]?)?([6-9]\d{9})\b/gi;
   const AMOUNT_REGEX = /(?:net\s*amount|amount\s*payable)\s*[:\-]?\s*(?:rs\.?|inr|₹)?\s*([\d,]+(?:\.\d{1,2})?)/i;
+  const DUE_AMOUNT_REGEX = /due\s*amount\s*[:\-]?\s*(?:rs\.?|inr|₹)?\s*([\d,]+(?:\.\d{1,2})?)/i;
+  const CREDIT_REGEX = /\bcredit\b/i;
 
   function normalizeToWaNumber(raw) {
     const digits = raw.replace(/\D/g, '');
@@ -446,6 +448,8 @@
       let totalFound = 0;
       const uniqueNumbers = new Set();
       let detectedAmount = null;
+      let detectedDueAmount = null;
+      let isCreditBill = false;
 
       for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
         const page = await pdf.getPage(pageNum);
@@ -501,6 +505,13 @@
           if (detectedAmount === null) {
             const amtMatch = combined.match(AMOUNT_REGEX);
             if (amtMatch) detectedAmount = amtMatch[1];
+          }
+          if (!isCreditBill && CREDIT_REGEX.test(combined)) {
+            isCreditBill = true;
+          }
+          if (detectedDueAmount === null) {
+            const dueMatch = combined.match(DUE_AMOUNT_REGEX);
+            if (dueMatch) detectedDueAmount = dueMatch[1];
           }
 
           let match;
@@ -569,6 +580,9 @@
       currentMessage = detectedAmount
         ? 'Bill is attached. Net Amount: *₹' + detectedAmount + '*'
         : 'Bill is attached.';
+      if (isCreditBill && detectedDueAmount) {
+        currentMessage += '\nOutstanding amount is *₹' + detectedDueAmount + '*';
+      }
 
       const summary = document.createElement('div');
       summary.className = 'summary-bar';
@@ -581,7 +595,9 @@
       amountLine.style.cssText = 'margin-top:8px;';
       const label = document.createElement('div');
       label.style.cssText = 'font-size:12.5px;opacity:.8;margin-bottom:4px;';
-      label.textContent = detectedAmount
+      label.textContent = isCreditBill && detectedDueAmount
+        ? '💬 Credit bill detect hua (Outstanding amount bhi add ho gaya) — message edit kar sakte ho:'
+        : detectedAmount
         ? '💬 Message (edit kar sakte ho, ye "Send PDF" ke saath jayega):'
         : '💬 Amount detect nahi hua — message edit kar sakte ho:';
       const msgBox = document.createElement('textarea');
