@@ -400,7 +400,7 @@
 
   async function openDirectChat(waNumber, pageNum, btnEl) {
     const originalHtml = btnEl.innerHTML;
-    const chatUrl = 'https://wa.me/' + waNumber + (currentMessage ? '?text=' + encodeURIComponent(currentMessage) : '');
+    const chatUrl = 'https://web.whatsapp.com/send?phone=' + waNumber + (currentMessage ? '&text=' + encodeURIComponent(currentMessage) : '') + '&app_absent=0';
     window.open(chatUrl, '_blank');
 
     if (!(navigator.clipboard && window.ClipboardItem)) {
