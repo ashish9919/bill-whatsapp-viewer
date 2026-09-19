@@ -400,13 +400,8 @@
 
   async function openDirectChat(waNumber, pageNum, btnEl) {
     const originalHtml = btnEl.innerHTML;
-    const chatUrl = 'whatsapp://send?phone=' + waNumber + (currentMessage ? '&text=' + encodeURIComponent(currentMessage) : '');
-    const link = document.createElement('a');
-    link.href = chatUrl;
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
-    setTimeout(() => document.body.removeChild(link), 500);
+    const chatUrl = 'https://wa.me/' + waNumber + (currentMessage ? '?text=' + encodeURIComponent(currentMessage) : '');
+    window.open(chatUrl, '_blank');
 
     if (!(navigator.clipboard && window.ClipboardItem)) {
       alert('Is browser me image seedha clipboard me copy nahi ho sakti. Chat khul chuki hai — bill ki image manually attach/paste kar dein.');
